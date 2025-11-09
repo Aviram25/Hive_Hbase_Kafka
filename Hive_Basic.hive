@@ -1,0 +1,378 @@
+-- ============================================================================
+-- APACHE HIVE - DATA WAREHOUSE AND SQL-ON-HADOOP QUERY LANGUAGE
+-- ============================================================================
+-- Hive provides SQL-like interface (HiveQL) to query data stored in Hadoop
+-- Translates SQL queries into MapReduce/Tez/Spark jobs
+-- Ideal for batch processing, data warehousing, and analytics
+
+-------------------------------HIVE SHELL-----------------------------
+
+-- Launch Hive interactive shell (Hive CLI)
+-- Provides command-line interface for running HiveQL queries
+hive
+
+
+-- ============================================================================
+-- DATABASE OPERATIONS
+-- ============================================================================
+-- Databases in Hive are logical namespaces for organizing tables
+-- Similar to schemas in traditional RDBMS
+
+-------------------------------------------------------------------------
+| Purpose                       | Command                               |
+| ----------------------------- | --------------------------------------|
+| Show all databases            | SHOW DATABASES;                       |
+| Create a new database         | CREATE DATABASE mydb;                 |
+| Use a specific database       | USE mydb;                             |
+| Show current database         | SELECT current_database();            |
+| Drop a database               | DROP DATABASE mydb;                   |
+| Drop if exists (force delete) | DROP DATABASE IF EXISTS mydb CASCADE; |
+-------------------------------------------------------------------------
+
+-- Notes:
+-- - CASCADE option drops all tables in the database before dropping it
+-- - Without CASCADE, database must be empty to drop
+-- - Default database is 'default' if none specified
+
+
+-- ============================================================================
+-- TABLE INSPECTION COMMANDS
+-- ============================================================================
+-- Commands to view and understand table structures
+
+--------------------------------------------------------------
+| Purpose                  | Command                         |
+| ------------------------ | ------------------------------- |
+| Show all tables          | SHOW TABLES;                    |
+| Describe table structure | DESCRIBE tablename;             |
+| Describe with details    | DESCRIBE FORMATTED tablename;   |
+--------------------------------------------------------------
+
+-- DESCRIBE: Shows column names and data types
+-- DESCRIBE FORMATTED: Shows additional metadata like location, format, partitions, properties
+
+
+-- ============================================================================
+-- CREATE TABLE - MANAGED TABLE
+-- ============================================================================
+-- Managed tables: Hive controls both metadata and data
+-- When dropped, both metadata and data are deleted
+
+CREATE TABLE employees (
+  id INT,                    -- Employee ID (integer)
+  name STRING,               -- Employee name (string/text)
+  salary FLOAT               -- Employee salary (floating point)
+)
+ROW FORMAT DELIMITED         -- Specifies how rows are formatted
+FIELDS TERMINATED BY ','     -- CSV format: fields separated by commas
+STORED AS TEXTFILE;          -- Storage format: plain text (alternatives: ORC, PARQUET, AVRO)
+
+-- Default location: /user/hive/warehouse/<database_name>.db/<table_name>/
+
+
+-- ============================================================================
+-- LOADING DATA INTO TABLES
+-- ============================================================================
+
+-- Load data from local filesystem into Hive table
+-- LOCAL: File is on the machine running Hive CLI (not HDFS)
+-- Data is COPIED into Hive warehouse directory
+LOAD DATA LOCAL INPATH '/home/cloudera/employees.csv'
+INTO TABLE employees;
+
+-- Load and replace existing data (deletes old data first)
+-- OVERWRITE: Removes all existing data before loading
+LOAD DATA LOCAL INPATH '/home/cloudera/employees.csv'
+OVERWRITE INTO TABLE employees;
+
+-- Load data into a specific partition
+-- Used with partitioned tables to organize data by partition values
+LOAD DATA LOCAL INPATH '/tmp/hr'
+INTO TABLE employees PARTITION(dept = 'hr');
+
+
+-- ============================================================================
+-- DYNAMIC PARTITIONING
+-- ============================================================================
+-- Allows automatic partition creation based on data values
+-- Useful when you don't know all partition values in advance
+
+-- Enable dynamic partitioning
+SET hive.exec.dynamic.partition = true;
+
+-- Allow fully dynamic partitions (no static partition required)
+-- nonstrict: All partition columns can be dynamic
+-- strict: Requires at least one static partition column
+SET hive.exec.dynamic.partition.mode = nonstrict;
+
+-- Insert with dynamic partitioning
+-- Partition columns (year, month) must be last in SELECT
+-- Hive automatically creates partitions based on year/month values
+INSERT INTO TABLE wh_visits PARTITION(year, month)
+SELECT name, purpose, year, month FROM staging_visits;
+
+
+-- ============================================================================
+-- BASIC QUERY OPERATIONS
+-- ============================================================================
+
+-- Select all records from table
+SELECT * FROM employees; 
+
+-- Filter records with WHERE clause
+-- Returns only employees with salary greater than 50000
+SELECT name, salary FROM employees WHERE salary > 50000;
+
+-- Count total number of records
+SELECT COUNT(*) FROM employees;
+
+-- Calculate average salary across all employees
+SELECT AVG(salary) FROM employees;
+
+-- Group by department and find maximum salary in each
+-- GROUP BY aggregates data by specified columns
+SELECT department, MAX(salary) FROM employees GROUP BY department;
+
+
+-- ============================================================================
+-- DATA DISTRIBUTION AND SAMPLING
+-- ============================================================================
+
+-- Distribute data by department column
+-- Controls how data is distributed to reducers (not sorted)
+-- Useful for optimizing join operations
+SELECT * FROM employees DISTRIBUTED BY dept;
+
+
+-- ============================================================================
+-- REGULAR EXPRESSIONS AND PATTERN MATCHING
+-- ============================================================================
+
+-- Filter using regular expressions with RLIKE (regex like)
+-- Matches department names containing "SOFT" followed by "DEV"
+-- \\s+ matches one or more whitespace characters
+-- .* matches any characters
+SELECT * FROM employees 
+WHERE dept RLIKE '.*SOFT.*\\s+DEV.*';
+
+
+-- ============================================================================
+-- STRING MANIPULATION FUNCTIONS
+-- ============================================================================
+
+-- COALESCE: Returns first non-NULL value
+-- If nickname is NULL, uses fname as display name
+SELECT COALESCE(nickname, fname) AS display_name
+FROM employees;
+
+-- SPLIT: Splits string into array
+-- Splits date string '2025-10-30' by '-' delimiter
+-- Returns: ["2025", "10", "30"]
+SELECT SPLIT('2025-10-30', '-') AS date_parts
+FROM employees;
+
+
+-- ============================================================================
+-- TEXT ANALYSIS FUNCTIONS
+-- ============================================================================
+
+-- EXPLODE with CONTEXT_NGRAMS: Extract common phrases containing specific words
+-- sentences(line): Tokenizes text into sentences
+-- context_ngrams: Finds n-grams (word sequences) containing "the"
+-- 20: Returns top 20 most common phrases
+-- EXPLODE: Converts array to multiple rows (one per element)
+SELECT EXPLODE(context_ngrams(sentences(line), array("the", null), 20)) AS result
+FROM constitution;
+
+-- SENTENCES: Tokenize text into words
+-- Returns array of arrays (sentences containing word arrays)
+SELECT SENTENCES('Hello world. hello hive is powerful') AS tokenized;
+
+-- NGRAMS: Extract n-grams (sequences of n words)
+-- sentences(line): Tokenizes text
+-- 2: Bi-grams (2-word sequences)
+-- 15: Return top 15 most common bi-grams
+SELECT EXPLODE(ngrams(sentences(line), 2, 15)) AS x FROM constitution;
+
+
+-- ============================================================================
+-- USER-DEFINED FUNCTIONS (UDFs)
+-- ============================================================================
+
+-- Register custom JAR containing UDF
+ADD JAR /path/to/udf.jar;
+
+-- Create temporary function from Java class
+-- 'com.udf': Fully qualified class name implementing UDF
+-- TEMPORARY: Function exists only in current session
+CREATE TEMPORARY FUNCTION my_upper AS 'com.udf';
+
+
+-- ============================================================================
+-- WINDOW FUNCTIONS AND ANALYTICS
+-- ============================================================================
+
+-- RANK: Assign ranking within each partition
+-- PARTITION BY dept: Separate ranking for each department
+-- ORDER BY salary DESC: Rank by salary (highest first)
+-- Handles ties by assigning same rank and skipping next rank
+SELECT name, dept, salary, 
+       RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS dept_rank 
+FROM employees;
+
+-- Cumulative sum with moving window
+-- ORDER BY date: Process rows in date order
+-- BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW: Sum from start to current row
+-- Note: Original has typo "BERTWEEN" and "2" - corrected below
+SELECT SUM(sales) OVER (
+  ORDER BY date 
+  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+) AS cumulative_sales
+FROM sales_table;
+
+
+-- ============================================================================
+-- TABLE PROPERTIES - SKIP HEADERS
+-- ============================================================================
+
+-- Create table with properties to skip header rows
+-- Useful when loading CSV files with header lines
+CREATE TABLE sales (
+  id INT,
+  product STRING,
+  amount DOUBLE
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+TBLPROPERTIES (
+  'skip.header.line.count'='3'  -- Skip first 3 rows (e.g., headers or metadata)
+);
+
+
+-- ============================================================================
+-- VIEWS
+-- ============================================================================
+
+-- Create a logical view (virtual table)
+-- Views don't store data, just the query definition
+-- Useful for simplifying complex queries and security (hiding columns)
+CREATE VIEW view_name AS 
+SELECT col1, col2
+FROM basic_table
+WHERE condition = true;
+
+-- Views are computed at query time (not materialized)
+
+
+-- ============================================================================
+-- PARTITIONING AND BUCKETING
+-- ============================================================================
+-- Partitioning: Divides table into parts based on column values (e.g., by year)
+-- Bucketing: Further divides data within partitions using hash function
+
+-- Set number of reducers for MapReduce jobs
+SET mapreduce.job.reduces = 2;
+
+-- Enable automatic bucketing (Hive manages bucket file creation)
+SET hive.enforce.bucketing = true;
+
+CREATE TABLE sales (
+  id INT,
+  product STRING,
+  price FLOAT
+)
+PARTITIONED BY (year INT)           -- Partition by year (creates subdirectories)
+CLUSTERED BY (product) INTO 4 BUCKETS  -- Hash product names into 4 buckets
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE;
+
+-- Benefits:
+-- Partitioning: Improves query performance by pruning partitions
+-- Bucketing: Enables efficient sampling and map-side joins
+-- Data organization: /warehouse/sales/year=2023/000000_0, 000001_0, etc.
+
+
+-- ============================================================================
+-- EXTERNAL TABLES
+-- ============================================================================
+-- External tables: Hive manages only metadata, not the data
+-- Data remains in original location when table is dropped
+-- Useful for sharing data with other tools or when data is managed elsewhere
+
+CREATE EXTERNAL TABLE logs (
+  user_id STRING,
+  action STRING,
+  ts STRING                          -- Timestamp as string
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\t'            -- Tab-delimited format
+STORED AS TEXTFILE
+LOCATION '/user/hive/logs/';         -- Explicit HDFS location (data must exist here)
+
+-- Key differences from managed tables:
+-- - DROP TABLE only removes metadata, not data files
+-- - Data must exist in specified LOCATION
+-- - Multiple external tables can point to same data
+
+
+-- ============================================================================
+-- INSERT DATA FROM ANOTHER TABLE
+-- ============================================================================
+
+-- Copy all data from staging table to production table
+-- Useful for ETL workflows: load → validate → insert
+INSERT INTO TABLE visits 
+SELECT * FROM visits_staging;
+
+-- Alternatives:
+-- INSERT OVERWRITE: Replaces existing data
+-- INSERT INTO: Appends to existing data
+
+
+-- ============================================================================
+-- HIVE CONFIGURATION AND SETTINGS
+-- ============================================================================
+
+----------------------------------------------------------------
+| Purpose                    | Command                         |
+| -------------------------- | --------------------------------|
+| Show current Hive settings | SET;                            |
+| Change property            | SET hive.cli.print.header=true; |
+| Check version              | !hive --version;                |
+| Exit Hive shell            | exit; or quit;                  |
+----------------------------------------------------------------
+
+-- Common settings:
+-- SET hive.cli.print.header=true;           -- Show column names in results
+-- SET hive.execution.engine=tez;            -- Use Tez instead of MapReduce
+-- SET hive.auto.convert.join=true;          -- Enable map-side joins
+-- SET hive.vectorized.execution.enabled=true; -- Enable vectorized query execution
+
+
+-- ============================================================================
+-- BEST PRACTICES AND TIPS
+-- ============================================================================
+
+-- 1. Use ORC or PARQUET for better performance (compressed columnar storage)
+--    STORED AS ORC;  or  STORED AS PARQUET;
+
+-- 2. Partition large tables by commonly filtered columns (date, region, etc.)
+
+-- 3. Use bucketing for large tables that are frequently joined
+
+-- 4. Prefer external tables when data is shared across systems
+
+-- 5. Use compression to save storage and improve I/O
+--    SET hive.exec.compress.output=true;
+
+-- 6. Analyze table statistics for query optimization
+--    ANALYZE TABLE employees COMPUTE STATISTICS;
+
+-- 7. Use appropriate file formats:
+--    - TEXTFILE: Human-readable, not compressed
+--    - ORC: Optimized Row Columnar, best for analytics
+--    - PARQUET: Columnar format, good for complex nested data
+--    - AVRO: Good for schema evolution
+
+-- 8. Regular expression performance: Use simpler patterns when possible
