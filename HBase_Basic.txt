@@ -1,15 +1,41 @@
-# Start hbase
+# ============================================================================
+# APACHE HBASE - NOSQL DATABASE ON HADOOP
+# ============================================================================
+# HBase is a distributed, scalable, NoSQL database built on top of HDFS
+# Provides real-time read/write access to large datasets
+# Based on Google's Bigtable design, stores data in column families
+# Best for: Random, real-time read/write access to Big Data
 
+# ------------- Start HBase Shell -------------
+# Launch HBase interactive shell for database operations
 hbase shell
 
 
+# ============================================================================
+# NAMESPACE OPERATIONS
+# ============================================================================
+# Namespaces are logical groupings of tables (similar to databases in RDBMS)
+# Default namespace is 'default', system namespace is 'hbase'
+
 | Purpose              | Command                        |
 | -------------------- | ------------------------------ |
-| Show all namespaces  | list_namespace               |
-| Create a namespace   | create_namespace 'myspace'   |
-| Describe a namespace | describe_namespace 'myspace' |
-| Drop a namespace     | drop_namespace 'myspace'     |
+| Show all namespaces  | list_namespace                 |
+| Create a namespace   | create_namespace 'myspace'     |
+| Describe a namespace | describe_namespace 'myspace'   |
+| Drop a namespace     | drop_namespace 'myspace'       |
 
+# Notes:
+# - Namespace must be empty before dropping (delete all tables first)
+# - Table names can include namespace: 'myspace:mytable'
+# - Without namespace prefix, tables go to 'default' namespace
+
+
+# ============================================================================
+# TABLE OPERATIONS
+# ============================================================================
+# HBase tables consist of row keys and column families
+# Column families must be defined at table creation time
+# Individual columns within families can be added dynamically
 
 | Purpose          | Command                             |
 | ---------------- | ------------------------------------|
@@ -20,47 +46,308 @@ hbase shell
 | Enable a table   | enable 'students'                   |
 | Drop a table     | disable 'students'; drop 'students' |
 
+# Table creation syntax: create 'table_name', 'column_family1', 'column_family2', ...
+# - 'students': Table name
+# - 'info': Column family for personal information
+# - 'grades': Column family for grade data
 
- put 'students', '101', 'info:name', 'Alice'
+# Important: Tables must be disabled before dropping
+# Column families group related data and share storage properties
+
+
+# ============================================================================
+# DATA INSERTION - PUT COMMAND
+# ============================================================================
+# PUT adds or updates a cell value in HBase
+# Syntax: put 'table', 'row_key', 'column_family:column', 'value'
+
+# Insert student information (row key: '101')
+put 'students', '101', 'info:name', 'Alice'
+# - Table: 'students'
+# - Row Key: '101' (unique identifier for this row)
+# - Column: 'info:name' (column 'name' in 'info' family)
+# - Value: 'Alice'
+
+# Add age to same row
 put 'students', '101', 'info:age', '22'
+
+# Add grade in different column family
 put 'students', '101', 'grades:math', '90'
 
+# Notes:
+# - Each PUT creates a new version with timestamp
+# - Same row key updates/adds to existing row
+# - Columns within families are created on-the-fly
 
+
+# ============================================================================
+# DATA RETRIEVAL - GET COMMAND
+# ============================================================================
+# GET retrieves data for a specific row key
+
+# Get all data for row '101' (all column families and columns)
 get 'students', '101'
+# Returns: All columns from 'info' and 'grades' families
+
+# Get specific column value
 get 'students', '101', 'info:name'
+# Returns: Only the 'name' column from 'info' family
+
+# Additional GET options:
+# get 'students', '101', {COLUMN => 'info:name', VERSIONS => 3}  # Get last 3 versions
+# get 'students', '101', {TIMERANGE => [ts1, ts2]}               # Get by time range
 
 
+# ============================================================================
+# TABLE SCANNING - SCAN COMMAND
+# ============================================================================
+# SCAN retrieves multiple rows (like SELECT * in SQL)
+
+# Scan entire table (all rows and columns)
 scan 'students'
+# Returns: All data in the table
+
+# Scan with filter (find rows containing specific value)
 scan 'students', {FILTER => "ValueFilter(=, 'binary:Alice')"}
-scan 'students', {STARTROW => 'j', STOPROW = 't'}
+# Returns: All rows where any cell contains 'Alice'
 
+# Scan with row key range
+# Note: Original has syntax error - corrected below
+scan 'students', {STARTROW => 'j', STOPROW => 't'}
+# Returns: Rows with keys between 'j' (inclusive) and 't' (exclusive)
+# Useful for range queries on lexicographically ordered row keys
+
+# Additional SCAN options:
+# scan 'students', {LIMIT => 10}                          # Limit results
+# scan 'students', {COLUMNS => ['info:name', 'grades']}   # Specific columns
+# scan 'students', {REVERSED => true}                     # Reverse order
+
+
+# ============================================================================
+# DATA DELETION
+# ============================================================================
+
+# Delete a specific cell (column value)
 delete 'students', '101', 'grades:math'
+# - Removes only the 'grades:math' column from row '101'
+# - Other columns in row '101' remain intact
+
+# Delete entire row (all column families and columns)
 deleteall 'students', '101'
-[10-11-2025 01:03] Aviram: alter 'students', 'attendance'
+# - Removes row key '101' and all its data
+# - Useful for removing complete records
+
+
+# ============================================================================
+# TABLE SCHEMA MODIFICATION - ALTER COMMAND
+# ============================================================================
+# ALTER modifies table structure (add/remove column families)
+# Table must be disabled before altering in some HBase versions
+
+# Add a new column family to existing table
+alter 'students', 'attendance'
+# - Adds 'attendance' column family to 'students' table
+# - Can now store attendance-related columns
+
+# Delete a column family from table
 alter 'students', {NAME => 'grades', METHOD => 'delete'}
+# - Removes 'grades' column family and all its data
+# - Permanently deletes all columns in that family
+
+# Other ALTER operations:
+# alter 'students', {NAME => 'info', VERSIONS => 5}           # Change versions kept
+# alter 'students', {NAME => 'info', COMPRESSION => 'SNAPPY'} # Enable compression
+# alter 'students', {NAME => 'info', TTL => 86400}            # Set time-to-live (seconds)
 
 
-| Purpose             | Command                 |
-| ------------------- | ----------------------- |
+# ============================================================================
+# ADMINISTRATIVE COMMANDS
+# ============================================================================
+
+| Purpose             | Command               |
+| ------------------- | --------------------- |
 | Check table status  | is_enabled 'students' |
 | List region servers | status 'simple'       |
 | Cluster status      | status 'detailed'     |
 | HBase version       | version               |
 | Exit shell          | exit                  |
 
-
-| Component        | Role                                  |
-| ---------------- | --------------------------------------|
-| *HMaster*      | Manages metadata, assigns regions       |
-| *RegionServer* | Stores and serves table data            |
-| *Zookeeper*    | Coordinates communication between nodes |
-| *HFile*        | Actual data storage file in HDFS        |
+# is_enabled: Returns true if table is enabled, false if disabled
+# status 'simple': Shows number of servers and basic cluster info
+# status 'detailed': Shows region distribution and server metrics
+# version: Displays HBase version and compilation details
 
 
+# ============================================================================
+# HBASE ARCHITECTURE COMPONENTS
+# ============================================================================
+# Understanding HBase's distributed architecture
+
+| Component        | Role                                        |
+| ---------------- | ------------------------------------------- |
+| *HMaster*        | Manages metadata, assigns regions           |
+| *RegionServer*   | Stores and serves table data                |
+| *Zookeeper*      | Coordinates communication between nodes     |
+| *HFile*          | Actual data storage file in HDFS            |
+
+# HMaster:
+# - Coordinates RegionServers
+# - Handles DDL operations (create, delete, alter tables)
+# - Manages region assignments and load balancing
+# - Handles schema changes
+
+# RegionServer:
+# - Serves data for one or more regions
+# - Handles read/write requests
+# - Manages region splits when regions grow too large
+# - Each RegionServer can serve multiple tables
+
+# Zookeeper:
+# - Maintains cluster state and configuration
+# - Tracks which servers are alive
+# - Provides distributed coordination
+# - Stores root region location
+
+# HFile:
+# - Immutable file format stored in HDFS
+# - Contains sorted key-value pairs
+# - Created during MemStore flush or compaction
+# - Provides efficient storage and retrieval
+
+
+# ============================================================================
+# COMPLETE WORKFLOW EXAMPLE
+# ============================================================================
+# Step-by-step example of common HBase operations
+
+# 1. Create table with two column families
 create 'students', 'info', 'grades'
+
+# 2. Insert data into the table
 put 'students', '101', 'info:name', 'Alice'
 put 'students', '101', 'grades:math', '95'
+
+# 3. Scan table to view all data
 scan 'students'
+# Output shows: Row key '101' with columns from 'info' and 'grades'
+
+# 4. Retrieve specific row data
 get 'students', '101'
+# Returns: All columns for student '101'
+
+# 5. Disable table (required before dropping)
 disable 'students'
+# Table is now offline and cannot be accessed
+
+# 6. Drop the table permanently
 drop 'students'
+# Table and all its data are removed
+
+
+# ============================================================================
+# HBASE DATA MODEL CONCEPTS
+# ============================================================================
+
+# Row Key:
+# - Unique identifier for each row (like primary key)
+# - Rows are sorted lexicographically by row key
+# - Design row keys for optimal access patterns
+# - Example: '101', 'user_alice', '2025-01-15_sensor1'
+
+# Column Family:
+# - Logical grouping of columns
+# - Defined at table creation
+# - All columns in family stored together
+# - Share storage properties (compression, versions)
+# - Example: 'info' (personal data), 'grades' (academic data)
+
+# Column Qualifier:
+# - Individual column within a family
+# - Created dynamically (not predefined)
+# - Format: 'family:qualifier'
+# - Example: 'info:name', 'grades:math'
+
+# Cell:
+# - Intersection of row key, column family, column qualifier
+# - Stores actual value with timestamp
+# - Multiple versions can exist (configurable)
+
+# Timestamp:
+# - Automatic version identifier
+# - Each PUT creates new version with current timestamp
+# - Used for retrieving historical data
+
+
+# ============================================================================
+# BEST PRACTICES
+# ============================================================================
+
+# 1. Row Key Design:
+#    - Most critical design decision in HBase
+#    - Design for access patterns (how you'll query)
+#    - Avoid hotspotting (sequential keys on same RegionServer)
+#    - Consider salting or hashing for better distribution
+#    - Example: Instead of timestamp-only, use 'userid_timestamp'
+
+# 2. Column Family Design:
+#    - Keep number of families small (1-3 typically)
+#    - Group frequently accessed columns together
+#    - Different families for different access patterns
+#    - Avoid creating many column families (impacts performance)
+
+# 3. Column Naming:
+#    - Use short names (stored with each cell)
+#    - Descriptive but concise
+#    - Consider data size impact
+
+# 4. Versioning:
+#    - Configure appropriate version count per family
+#    - Default is 1 version (latest only)
+#    - Increase for audit trails or time-series data
+#    - Old versions consume storage
+
+# 5. Compression:
+#    - Enable compression on column families
+#    - SNAPPY: Fast, moderate compression
+#    - GZ: Better compression, slower
+#    - Saves storage and I/O
+
+# 6. Batch Operations:
+#    - Use batch puts instead of individual puts
+#    - Improves throughput significantly
+#    - Example: Use HBase API for bulk loading
+
+# 7. Pre-splitting:
+#    - Create regions upfront for known data distribution
+#    - Avoids region splits during initial load
+#    - Improves load performance
+
+
+# ============================================================================
+# COMMON USE CASES
+# ============================================================================
+
+# 1. Time-Series Data:
+#    - Sensor data, logs, metrics
+#    - Row key: 'sensor_id_reverse_timestamp'
+#    - Fast writes, range scans
+
+# 2. User Profiles:
+#    - Social media, e-commerce
+#    - Row key: 'user_id'
+#    - Fast single-row lookups
+
+# 3. Real-time Analytics:
+#    - Click streams, event tracking
+#    - Row key: 'event_type_timestamp'
+#    - High write throughput
+
+# 4. Content Management:
+#    - Document storage, metadata
+#    - Row key: 'document_id'
+#    - Flexible schema per document
+
+# 5. Message Systems:
+#    - Chat history, notifications
+#    - Row key: 'user_id_timestamp'
+#    - Sequential access patterns
